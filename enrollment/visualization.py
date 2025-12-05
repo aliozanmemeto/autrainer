@@ -7,6 +7,37 @@ import seaborn as sns
 import torch
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
+from collections import defaultdict
+
+
+def compute_uar(targets: List[int], predictions: List[int], n_classes: int) -> float:
+    """Compute Unweighted Average Recall (UAR).
+
+    UAR = (1/C) * Σ recall_c, where recall_c = TP_c / (TP_c + FN_c)
+
+    Args:
+        targets: List of ground truth labels
+        predictions: List of predicted labels
+        n_classes: Number of classes
+
+    Returns:
+        UAR score (0 to 1)
+    """
+    if len(targets) == 0:
+        return 0.0
+
+    targets = np.array(targets)
+    predictions = np.array(predictions)
+
+    recalls = []
+    for c in range(n_classes):
+        mask = targets == c
+        if mask.sum() == 0:
+            continue  # Skip classes not present
+        recall_c = (predictions[mask] == c).sum() / mask.sum()
+        recalls.append(recall_c)
+
+    return np.mean(recalls) if recalls else 0.0
 
 
 class EnrollmentVisualizer:
@@ -216,63 +247,227 @@ class EnrollmentVisualizer:
     def plot_attention_by_speaker(
         self,
         top_n: int = 10,
-        figsize: Tuple[int, int] = (12, 6),
+        sort_by_uar: bool = True,
+        figsize: Tuple[int, int] = (14, 8),
     ) -> plt.Figure:
-        """Plot attention patterns per speaker."""
+        """Plot attention patterns per speaker with UAR.
+
+        Args:
+            top_n: Number of speakers to show
+            sort_by_uar: If True, sort speakers by UAR (lowest first for analysis)
+            figsize: Figure size
+
+        Returns:
+            matplotlib Figure
+        """
         if not self.attention_data or self.attention_data[0]["speaker"] is None:
             raise ValueError("No speaker data available.")
 
         enrollment_labels = self.get_enrollment_labels()
+        n_classes = len(self.class_names)
 
         # Aggregate by speaker
-        speaker_attention = {}
-        speaker_accuracy = {}
+        speaker_attention = defaultdict(list)
+        speaker_targets = defaultdict(list)
+        speaker_predictions = defaultdict(list)
 
         for item in self.attention_data:
             spk = item["speaker"]
-            if spk not in speaker_attention:
-                speaker_attention[spk] = []
-                speaker_accuracy[spk] = []
             speaker_attention[spk].append(item["attention"])
-            speaker_accuracy[spk].append(item["correct"])
+            speaker_targets[spk].append(item["target"])
+            speaker_predictions[spk].append(item["prediction"])
 
-        # Average per speaker
-        speakers = list(speaker_attention.keys())[:top_n]
+        # Compute UAR per speaker
+        speaker_uar = {}
+        for spk in speaker_attention.keys():
+            speaker_uar[spk] = compute_uar(
+                speaker_targets[spk],
+                speaker_predictions[spk],
+                n_classes,
+            )
+
+        # Sort speakers by UAR
+        if sort_by_uar:
+            speakers = sorted(speaker_uar.keys(), key=lambda s: speaker_uar[s])[:top_n]
+        else:
+            speakers = list(speaker_attention.keys())[:top_n]
+
         attention_matrix = np.array([np.mean(speaker_attention[s], axis=0) for s in speakers])
-        accuracies = [np.mean(speaker_accuracy[s]) for s in speakers]
+        uars = [speaker_uar[s] for s in speakers]
 
-        fig, axes = plt.subplots(1, 2, figsize=figsize)
+        fig, axes = plt.subplots(1, 3, figsize=figsize)
 
-        # Heatmap
+        # 1. Heatmap with UAR labels
         sns.heatmap(
             attention_matrix,
             annot=True,
             fmt=".2f",
             xticklabels=enrollment_labels,
-            yticklabels=[f"{s} ({acc:.0%})" for s, acc in zip(speakers, accuracies)],
+            yticklabels=[f"{s} (UAR:{uar:.1%})" for s, uar in zip(speakers, uars)],
             cmap="Blues",
             ax=axes[0],
         )
         axes[0].set_xlabel("Enrollment Utterance")
-        axes[0].set_ylabel("Speaker (Accuracy)")
+        axes[0].set_ylabel("Speaker (UAR)")
         axes[0].set_title("Attention by Speaker")
 
-        # Accuracy vs attention correlation
+        # 2. UAR vs attention correlation
         for i, label in enumerate(enrollment_labels):
             att_vals = [np.mean(speaker_attention[s], axis=0)[i] for s in speakers]
-            axes[1].scatter(att_vals, accuracies, label=label, alpha=0.7)
+            axes[1].scatter(att_vals, uars, label=label, alpha=0.7, s=60)
 
         axes[1].set_xlabel("Mean Attention Weight")
-        axes[1].set_ylabel("Accuracy")
-        axes[1].set_title("Accuracy vs Attention")
+        axes[1].set_ylabel("UAR")
+        axes[1].set_title("UAR vs Attention")
+        axes[1].legend()
+
+        # 3. UAR distribution across speakers
+        all_uars = list(speaker_uar.values())
+        axes[2].hist(all_uars, bins=20, edgecolor='black', alpha=0.7)
+        axes[2].axvline(np.mean(all_uars), color='red', linestyle='--',
+                        label=f'Mean: {np.mean(all_uars):.1%}')
+        axes[2].axvline(np.median(all_uars), color='green', linestyle='--',
+                        label=f'Median: {np.median(all_uars):.1%}')
+        axes[2].set_xlabel("UAR")
+        axes[2].set_ylabel("Number of Speakers")
+        axes[2].set_title(f"UAR Distribution (n={len(all_uars)} speakers)")
+        axes[2].legend()
+
+        plt.tight_layout()
+
+        if self.save_dir:
+            fig.savefig(self.save_dir / "attention_by_speaker_uar.png", dpi=150, bbox_inches="tight")
+
+        return fig
+
+    def plot_uar_improvement_by_speaker(
+        self,
+        baseline_predictions: Dict[str, List[int]],
+        figsize: Tuple[int, int] = (12, 6),
+    ) -> plt.Figure:
+        """Compare UAR per speaker between baseline and enrollment model.
+
+        Args:
+            baseline_predictions: Dict mapping speaker_id -> list of baseline predictions
+            figsize: Figure size
+
+        Returns:
+            matplotlib Figure showing UAR improvement
+        """
+        if not self.attention_data or self.attention_data[0]["speaker"] is None:
+            raise ValueError("No speaker data available.")
+
+        n_classes = len(self.class_names)
+
+        # Aggregate enrollment model results by speaker
+        speaker_targets = defaultdict(list)
+        speaker_preds_enrollment = defaultdict(list)
+
+        for item in self.attention_data:
+            spk = item["speaker"]
+            speaker_targets[spk].append(item["target"])
+            speaker_preds_enrollment[spk].append(item["prediction"])
+
+        # Compute UAR for both models
+        speakers = []
+        uar_baseline = []
+        uar_enrollment = []
+
+        for spk in speaker_targets.keys():
+            if spk not in baseline_predictions:
+                continue
+
+            speakers.append(spk)
+            targets = speaker_targets[spk]
+
+            uar_b = compute_uar(targets, baseline_predictions[spk], n_classes)
+            uar_e = compute_uar(targets, speaker_preds_enrollment[spk], n_classes)
+
+            uar_baseline.append(uar_b)
+            uar_enrollment.append(uar_e)
+
+        # Sort by improvement
+        improvements = np.array(uar_enrollment) - np.array(uar_baseline)
+        sort_idx = np.argsort(improvements)
+
+        speakers = [speakers[i] for i in sort_idx]
+        uar_baseline = [uar_baseline[i] for i in sort_idx]
+        uar_enrollment = [uar_enrollment[i] for i in sort_idx]
+        improvements = improvements[sort_idx]
+
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+        # 1. Paired bar chart
+        x = np.arange(len(speakers))
+        width = 0.35
+
+        axes[0].bar(x - width/2, uar_baseline, width, label='Baseline', alpha=0.8)
+        axes[0].bar(x + width/2, uar_enrollment, width, label='Enrollment', alpha=0.8)
+        axes[0].set_xticks(x)
+        axes[0].set_xticklabels(speakers, rotation=45, ha='right')
+        axes[0].set_ylabel("UAR")
+        axes[0].set_title("UAR per Speaker: Baseline vs Enrollment")
+        axes[0].legend()
+
+        # 2. Improvement waterfall
+        colors = ['green' if imp > 0 else 'red' for imp in improvements]
+        axes[1].bar(speakers, improvements, color=colors, alpha=0.8)
+        axes[1].axhline(y=0, color='black', linestyle='-', linewidth=0.5)
+        axes[1].axhline(y=np.mean(improvements), color='blue', linestyle='--',
+                        label=f'Mean Δ: {np.mean(improvements):+.1%}')
+        axes[1].set_xticklabels(speakers, rotation=45, ha='right')
+        axes[1].set_ylabel("UAR Improvement")
+        axes[1].set_title("UAR Change (Enrollment - Baseline)")
         axes[1].legend()
 
         plt.tight_layout()
 
         if self.save_dir:
-            fig.savefig(self.save_dir / "attention_by_speaker.png", dpi=150, bbox_inches="tight")
+            fig.savefig(self.save_dir / "uar_improvement_by_speaker.png", dpi=150, bbox_inches="tight")
 
         return fig
+
+    def get_speaker_uar_summary(self) -> Dict[str, Dict]:
+        """Get UAR summary statistics per speaker.
+
+        Returns:
+            Dict with speaker stats: {speaker_id: {uar, n_samples, per_class_recall}}
+        """
+        if not self.attention_data:
+            return {}
+
+        n_classes = len(self.class_names)
+
+        # Aggregate by speaker
+        speaker_targets = defaultdict(list)
+        speaker_predictions = defaultdict(list)
+
+        for item in self.attention_data:
+            spk = item["speaker"]
+            if spk is None:
+                continue
+            speaker_targets[spk].append(item["target"])
+            speaker_predictions[spk].append(item["prediction"])
+
+        results = {}
+        for spk in speaker_targets.keys():
+            targets = np.array(speaker_targets[spk])
+            preds = np.array(speaker_predictions[spk])
+
+            # Per-class recall
+            per_class = {}
+            for c, name in enumerate(self.class_names):
+                mask = targets == c
+                if mask.sum() > 0:
+                    per_class[name] = (preds[mask] == c).sum() / mask.sum()
+
+            results[spk] = {
+                "uar": compute_uar(speaker_targets[spk], speaker_predictions[spk], n_classes),
+                "n_samples": len(targets),
+                "per_class_recall": per_class,
+            }
+
+        return results
 
     def clear(self):
         """Clear collected attention data."""

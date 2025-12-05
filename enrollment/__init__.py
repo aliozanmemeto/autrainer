@@ -15,6 +15,7 @@ from .visualization import (
     EnrollmentVisualizer,
     extract_attention_from_batch,
     create_attention_report,
+    compute_uar,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "EnrollmentVisualizer",
     "extract_attention_from_batch",
     "create_attention_report",
+    "compute_uar",
 ]
