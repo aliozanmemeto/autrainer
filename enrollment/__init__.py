@@ -11,10 +11,18 @@ from .enrollment_aibo import (
     EnrollmentDataItem,
 )
 from .wav2vec2_enrollment import Wav2Vec2Enrollment
+from .visualization import (
+    EnrollmentVisualizer,
+    extract_attention_from_batch,
+    create_attention_report,
+)
 
 __all__ = [
     "EnrollmentAIBO",
     "EnrollmentDataItem",
     "EnrollmentDataBatch",
     "Wav2Vec2Enrollment",
+    "EnrollmentVisualizer",
+    "extract_attention_from_batch",
+    "create_attention_report",
 ]
