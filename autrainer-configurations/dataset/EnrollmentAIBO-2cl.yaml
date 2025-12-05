@@ -1,9 +1,9 @@
 # EnrollmentAIBO 2-class classification dataset config
 id: EnrollmentAIBO-2cl
-_target_: enrollment.EnrollmentAIBO
+_target_: enrollment_aibo.EnrollmentAIBO
 
-# Dataset path (adjust to your AIBO data location)
-path: data/AIBO
+# Dataset path
+path: /data/chi-gpu1/perser/AIBO
 features_subdir: null  # Will use audio_subdir (wav)
 
 # AIBO-specific settings

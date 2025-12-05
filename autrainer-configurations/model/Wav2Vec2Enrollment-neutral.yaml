@@ -1,6 +1,6 @@
 # Wav2Vec2 with enrollment personalization - "neutral" mode only
 id: Wav2Vec2Enrollment-neutral
-_target_: enrollment.Wav2Vec2Enrollment
+_target_: wav2vec2_enrollment.Wav2Vec2Enrollment
 
 # Model architecture
 pretrained_name: audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim
