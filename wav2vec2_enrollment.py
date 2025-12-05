@@ -54,7 +54,7 @@ class Wav2Vec2Enrollment(AbstractModel):
             transfer: Transfer learning configuration (not used for HF models).
         """
         self.pretrained_name = pretrained_name
-        self.dropout_rate = dropout
+        self.dropout = dropout  # Must match parameter name for audobject
         self.freeze_feature_extractor = freeze_feature_extractor
         self.freeze_encoder = freeze_encoder
         self.unfreeze_last_n_layers = unfreeze_last_n_layers
@@ -90,7 +90,7 @@ class Wav2Vec2Enrollment(AbstractModel):
         self.classifier = nn.Sequential(
             nn.Linear(self.hidden_size, self.hidden_size),
             nn.ReLU(),
-            nn.Dropout(self.dropout_rate),
+            nn.Dropout(self.dropout),
             nn.Linear(self.hidden_size, self.output_dim),
         )
 
