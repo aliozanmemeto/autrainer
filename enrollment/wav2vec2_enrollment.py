@@ -174,12 +174,9 @@ class Wav2Vec2Enrollment(AbstractModel):
         if self.enrollment is None:
             return instance_emb
 
-        # Validate enrollment data is provided
+        # For model summary/torchinfo calls without enrollment data, fall back to baseline
         if enroll_neutral is None and enroll_emotional is None:
-            raise ValueError(
-                f"enrollment='{self.enrollment}' requires enrollment data, "
-                "but none was provided."
-            )
+            return instance_emb
 
         # Build enrollment tensor based on mode
         if self.enrollment == "neutral":
