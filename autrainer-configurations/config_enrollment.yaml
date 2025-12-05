@@ -1,0 +1,39 @@
+# Example configuration for enrollment personalization experiments
+# Usage: autrainer train -cn config_enrollment
+defaults:
+  - _autrainer_
+  - override dataset: EnrollmentAIBO-2cl
+  - override model: Wav2Vec2Enrollment
+  - override optimizer: Adam
+  - _self_
+
+# Results directory
+results_dir: results/enrollment
+
+# Experiment settings
+experiment_id: aibo-2cl-enrollment
+iterations: 10
+training_type: epoch
+eval_frequency: 1
+save_frequency: 5
+
+# Inference settings
+inference_batch_size: 8
+
+# Progress bar (disable for cluster runs)
+progress_bar: true
+
+# Output saving
+save_train_outputs: false
+save_dev_outputs: true
+save_test_outputs: true
+
+# Hydra sweeper for hyperparameter search
+hydra:
+  sweeper:
+    params:
+      +seed: 1, 2, 3
+      +batch_size: 4, 8
+      +learning_rate: 0.00001, 0.0001
+      # Uncomment to sweep over enrollment modes:
+      # model: Wav2Vec2Enrollment, Wav2Vec2Enrollment-neutral, Wav2Vec2Enrollment-emotional, Wav2Vec2Enrollment-baseline

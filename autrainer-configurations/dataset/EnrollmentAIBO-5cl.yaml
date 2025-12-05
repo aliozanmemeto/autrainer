@@ -1,0 +1,32 @@
+# EnrollmentAIBO 5-class classification dataset config
+id: EnrollmentAIBO-5cl
+_target_: enrollment.EnrollmentAIBO
+
+# Dataset path (adjust to your AIBO data location)
+path: data/AIBO
+features_subdir: null  # Will use audio_subdir (wav)
+
+# AIBO-specific settings
+aibo_task: "5cl"
+crop_size: 48000
+sample_rate: 16000
+
+# Standard dataset settings
+index_column: file
+target_column: class
+file_type: wav
+file_handler:
+  autrainer.datasets.utils.AudioFileHandler:
+    target_sample_rate: 16000
+
+# Metrics
+criterion: autrainer.criterions.BalancedCrossEntropyLoss
+metrics:
+  - autrainer.metrics.Accuracy
+  - autrainer.metrics.UAR
+  - autrainer.metrics.F1
+tracking_metric: autrainer.metrics.UAR
+
+# Transforms (applied to main audio only - enrollment uses internal cropping)
+transform:
+  type: raw
